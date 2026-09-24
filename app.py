@@ -15,6 +15,8 @@ import uvicorn
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from langgraph.types import interrupt, Command
+
 
 from langchain_core.messages import (
     HumanMessage,
@@ -246,18 +248,21 @@ async def chat_stream(request: Request):
         }
     }
 
+    # Check BEFORE streaming whether this thread is paused on an interrupt
+    state = agent.get_state(config)
+    is_awaiting_resume = bool(state.next)
+
+    if is_awaiting_resume:
+        stream_input = Command(resume=user_message)
+    else:
+        stream_input = {"messages": [HumanMessage(content=user_message)]}
+
     def event_generator():
         final_answer = ""
 
         try:
-            inputs = {
-                "messages": [
-                    HumanMessage(content=user_message)
-                ]
-            }
-
             for chunk, metadata in agent.stream(
-                inputs,
+                stream_input,
                 config=config,
                 stream_mode="messages"
             ):
@@ -269,6 +274,20 @@ async def chat_stream(request: Request):
                 if token:
                     final_answer += token
                     yield sse_data({"token": token})
+
+            # After streaming ends, check if graph paused on a NEW interrupt
+            new_state = agent.get_state(config)
+
+            if new_state.next:
+                interrupt_msg = None
+                for task in new_state.tasks:
+                    if task.interrupts:
+                        interrupt_msg = task.interrupts[0].value
+                        break
+
+                if interrupt_msg:
+                    yield sse_data({"token": f"\n\n{interrupt_msg}"})
+                    final_answer += f"\n\n{interrupt_msg}"
 
             if final_answer.strip():
                 save_chat_message(thread_id, "assistant", final_answer)

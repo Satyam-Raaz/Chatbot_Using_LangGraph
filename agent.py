@@ -70,7 +70,9 @@ def build_agent():
     # Initialize ChatGoogleGenerativeAI
     llm = ChatGroq(
         model="openai/gpt-oss-120b",
-        api_key=GROQ_API_KEY
+        api_key=GROQ_API_KEY,
+        max_tokens=4096
+
     )
 
     llm_with_tools = llm.bind_tools(tools)

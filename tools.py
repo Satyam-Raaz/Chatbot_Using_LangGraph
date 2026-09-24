@@ -7,6 +7,8 @@ from rag import retrieve_from_rag
 import requests
 from typing import Any
 import os
+from langgraph.types import interrupt
+
 
 
 
@@ -66,6 +68,34 @@ def get_stock_price(symbol: str) -> dict:
     r = requests.get(url)
     return r.json() 
 
+
+@tool
+def purchase_stock(symbol: str, quantity: int) -> dict:
+    """
+    Simulate purchasing a given quantity of a stock symbol.
+
+    HUMAN-IN-THE-LOOP:
+    Before confirming the purchase, this tool will interrupt
+    and wait for a human decision ("yes" / anything else).
+    """
+    # This pauses the graph and returns control to the caller
+    decision = interrupt(f"Approve buying {quantity} shares of {symbol}? (yes/no)")
+
+    if isinstance(decision, str) and decision.lower() == "yes":
+        return {
+            "status": "success",
+            "message": f"Purchase order placed for {quantity} shares of {symbol}.",
+            "symbol": symbol,
+            "quantity": quantity,
+        }
+    
+    else:
+        return {
+            "status": "cancelled",
+            "message": f"Purchase of {quantity} shares of {symbol} was declined by human.",
+            "symbol": symbol,
+            "quantity": quantity,
+        }
 
 
 @tool
@@ -241,5 +271,6 @@ tools = [
     recall_memory,
     web_search,
     get_current_weather,
-    get_stock_price
+    get_stock_price,
+    purchase_stock
 ]
